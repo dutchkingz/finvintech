@@ -350,7 +350,7 @@ def get_stock_quote(symbol: str):
         prev = info.get("previousClose", current)
         change = current - prev
         change_pct = (change / prev * 100) if prev else 0.0
-        div_yield = info.get("dividendYield")
+        div_yield = info.get("trailingAnnualDividendYield")
         return StockQuote(
             symbol=symbol.upper(),
             company_name=info.get("shortName", "Unknown"),

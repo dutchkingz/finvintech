@@ -30,6 +30,12 @@ interface SearchResult {
   exchange: string;
 }
 
+interface EarningsRecord {
+  earnings_date: string;
+  estimated_eps: number | null;
+  reported_eps: number | null;
+}
+
 export default function Home() {
   const router = useRouter();
   const [username, setUsername] = useState<string | null>(null);
@@ -39,6 +45,7 @@ export default function Home() {
   const [suggestions, setSuggestions] = useState<SearchResult[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [quote, setQuote] = useState<StockQuote | null>(null);
+  const [earnings, setEarnings] = useState<EarningsRecord[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const searchRef = useRef<HTMLDivElement>(null);
@@ -47,6 +54,7 @@ export default function Home() {
   async function fetchQuote(symbol: string) {
     setLoading(true);
     setError(null);
+    setEarnings(null);
     try {
       const res = await fetch(`http://127.0.0.1:8000/api/stock/${symbol}/quote`);
       if (!res.ok) {
@@ -54,6 +62,11 @@ export default function Home() {
         throw new Error(data.detail || "Stock not found");
       }
       setQuote(await res.json());
+      // Fetch earnings in parallel (non-blocking)
+      fetch(`http://127.0.0.1:8000/api/stock/${symbol}/earnings`)
+        .then(r => r.ok ? r.json() : [])
+        .then(data => setEarnings(Array.isArray(data) ? data : []))
+        .catch(() => setEarnings([]));
     } catch (err: any) {
       setError(err.message || "An unknown error occurred");
     } finally {
@@ -352,6 +365,57 @@ export default function Home() {
                 </div>
               )}
             </div>
+
+            {/* Earnings dates */}
+            {earnings && earnings.length > 0 && (() => {
+              const today = new Date();
+              const upcoming = earnings
+                .map(e => ({ ...e, date: new Date(e.earnings_date) }))
+                .filter(e => e.date >= today)
+                .sort((a, b) => a.date.getTime() - b.date.getTime());
+              const nextEarnings = upcoming.length > 0 ? upcoming[0] : null;
+              const past = earnings
+                .map(e => ({ ...e, date: new Date(e.earnings_date) }))
+                .filter(e => e.date < today)
+                .sort((a, b) => b.date.getTime() - a.date.getTime())
+                .slice(0, 4);
+
+              return (
+                <div style={{ marginTop: "2rem", paddingTop: "2rem", borderTop: "1px solid var(--card-border)" }}>
+                  <span className="stat-label" style={{ marginBottom: "1rem", display: "block" }}>Earnings</span>
+                  {nextEarnings && (
+                    <div style={{ marginBottom: "1rem", padding: "0.75rem 1rem", background: "rgba(245, 158, 11, 0.1)", border: "1px solid rgba(245, 158, 11, 0.2)", borderRadius: "10px" }}>
+                      <span style={{ color: "#f59e0b", fontWeight: 600 }}>
+                        Next: {nextEarnings.date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                      </span>
+                      {nextEarnings.estimated_eps != null && (
+                        <span style={{ color: "#9ca3af", marginLeft: "1rem" }}>
+                          Est. EPS: ${nextEarnings.estimated_eps.toFixed(2)}
+                        </span>
+                      )}
+                      <span style={{ color: "#9ca3af", marginLeft: "1rem" }}>
+                        ({Math.ceil((nextEarnings.date.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))} days away)
+                      </span>
+                    </div>
+                  )}
+                  {past.length > 0 && (
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "0.5rem" }}>
+                      {past.map(e => (
+                        <div key={e.earnings_date} style={{ fontSize: "0.85rem", color: "#9ca3af" }}>
+                          {e.date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                          {e.reported_eps != null && <span style={{ color: "var(--foreground)", marginLeft: "0.5rem" }}>EPS ${e.reported_eps.toFixed(2)}</span>}
+                          {e.estimated_eps != null && e.reported_eps != null && (
+                            <span style={{ marginLeft: "0.25rem", color: e.reported_eps >= e.estimated_eps ? "#10b981" : "#ef4444" }}>
+                              {e.reported_eps >= e.estimated_eps ? "▲" : "▼"}
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
           </div>
         )}
       </main>
